@@ -46,8 +46,8 @@ OlaClaw turns your Claude Code into a personal assistant that never sleeps. It r
 ## Getting Started in 5 Minutes
 
 ```bash
-claude plugin marketplace add moazbuilds/olaclaw
-claude plugin install olaclaw
+/plugin marketplace add olamni-research/OlaClaw
+/plugin install olaclaw@olaclaw
 ```
 Then open a Claude Code session and run:
 ```
