@@ -1,9 +1,7 @@
 <p align="center">
-  <img src="images/claudeclaw-banner.svg" alt="ClaudeClaw Banner" />
+  <img src="images/02-classic-terminal@2x.png" alt="ClaudeClaw Banner" />
 </p>
-<p align="center">
-  <img src="images/claudeclaw-wordmark.png" alt="ClaudeClaw Wordmark" />
-</p>
+
 
 <p align="center">
   <img src="https://awesome.re/badge.svg" alt="Awesome" />
