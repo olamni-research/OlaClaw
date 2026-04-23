@@ -23,6 +23,15 @@ if (command === "--stop-all") {
   telegram();
 } else if (command === "discord") {
   discord();
+} else if (command === "outlook") {
+  const sub = args[1];
+  if (sub === "auth") {
+    const { outlookAuth } = await import("../extensions/outlook/outlook");
+    outlookAuth();
+  } else {
+    const { outlook } = await import("../extensions/outlook/outlook");
+    outlook();
+  }
 } else if (command === "send") {
   send(args.slice(1));
 } else {

@@ -326,10 +326,12 @@ export async function start(args: string[] = []) {
   let web: WebServerHandle | null = null;
   let discordStopGateway: (() => void) | null = null;
   let whatsappStopServer: (() => void) | null = null;
+  let outlookStopServer: (() => void) | null = null;
 
   async function shutdown() {
     if (discordStopGateway) discordStopGateway();
     if (whatsappStopServer) whatsappStopServer();
+    if (outlookStopServer) outlookStopServer();
     if (web) web.stop();
     await teardownStatusline();
     await cleanupPidFile();
@@ -441,6 +443,44 @@ export async function start(args: string[] = []) {
 
   await initWhatsApp(currentSettings.whatsapp);
   if (!whatsappKey) console.log("  WhatsApp: not configured");
+
+  // --- Outlook (extension) ---
+  let outlookSendToUser: ((email: string, text: string) => Promise<void>) | null = null;
+  let outlookKey = "";
+
+  async function initOutlook(cfg: Settings["outlook"]) {
+    const nextKey = cfg.clientId && cfg.publicUrl
+      ? `${cfg.clientId}:${cfg.tenantId}:${cfg.webhookPort}:${cfg.publicUrl}`
+      : "";
+    if (nextKey === outlookKey) return;
+
+    if (outlookStopServer) {
+      outlookStopServer();
+      outlookStopServer = null;
+      outlookSendToUser = null;
+    }
+
+    if (!nextKey) {
+      if (outlookKey) console.log(`[${ts()}] Outlook: disabled`);
+      outlookKey = "";
+      return;
+    }
+
+    try {
+      const { startWebhookServer, stopWebhookServer, sendMessageToUser } =
+        await import("../../extensions/outlook/outlook");
+      startWebhookServer(debugFlag);
+      outlookStopServer = stopWebhookServer;
+      outlookSendToUser = sendMessageToUser;
+      outlookKey = nextKey;
+      console.log(`[${ts()}] Outlook: enabled`);
+    } catch (err) {
+      console.error(`[${ts()}] Outlook init failed:`, err);
+    }
+  }
+
+  await initOutlook(currentSettings.outlook);
+  if (!outlookKey) console.log("  Outlook: not configured");
 
   function isAddrInUse(err: unknown): boolean {
     if (!err || typeof err !== "object") return false;
@@ -728,6 +768,9 @@ export async function start(args: string[] = []) {
 
       // WhatsApp changes
       await initWhatsApp(newSettings.whatsapp);
+
+      // Outlook changes
+      await initOutlook(newSettings.outlook);
     } catch (err) {
       console.error(`[${ts()}] Hot-reload error:`, err);
     }

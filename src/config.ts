@@ -81,6 +81,15 @@ const DEFAULT_SETTINGS: Settings = {
     webhookHost: "127.0.0.1",
     webhookPort: 4633,
   },
+  outlook: {
+    clientId: "",
+    tenantId: "common",
+    allowedSenders: [],
+    webhookPath: "/outlook/webhook",
+    webhookHost: "127.0.0.1",
+    webhookPort: 4634,
+    publicUrl: "",
+  },
   // Default to "strict" (no Bash/WebSearch/WebFetch). "moderate" gives Claude
   // all tools under a prompt-level directory guard that prompt injection can
   // bypass — opt into it explicitly if you need it.
@@ -127,6 +136,16 @@ export interface WhatsAppConfig {
   webhookPort: number;         // bind port (default 4633)
 }
 
+export interface OutlookConfig {
+  clientId: string;            // Azure AD application (client) ID
+  tenantId: string;            // "common" for multi-tenant, or a directory id
+  allowedSenders: string[];    // email addresses that may invoke Claude
+  webhookPath: string;         // default /outlook/webhook
+  webhookHost: string;         // default 127.0.0.1
+  webhookPort: number;         // default 4634
+  publicUrl: string;           // public HTTPS base URL Microsoft can reach
+}
+
 export type SecurityLevel =
   | "locked"
   | "strict"
@@ -150,6 +169,7 @@ export interface Settings {
   telegram: TelegramConfig;
   discord: DiscordConfig;
   whatsapp: WhatsAppConfig;
+  outlook: OutlookConfig;
   security: SecurityConfig;
   web: WebConfig;
   stt: SttConfig;
@@ -316,6 +336,23 @@ function parseSettings(raw: Record<string, any>): Settings {
         ? raw.whatsapp.webhookHost.trim()
         : "127.0.0.1",
       webhookPort: Number.isFinite(raw.whatsapp?.webhookPort) ? Number(raw.whatsapp.webhookPort) : 4633,
+    },
+    outlook: {
+      clientId: typeof raw.outlook?.clientId === "string" ? raw.outlook.clientId.trim() : "",
+      tenantId: typeof raw.outlook?.tenantId === "string" && raw.outlook.tenantId.trim()
+        ? raw.outlook.tenantId.trim()
+        : "common",
+      allowedSenders: Array.isArray(raw.outlook?.allowedSenders)
+        ? raw.outlook.allowedSenders.map(String).map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+        : [],
+      webhookPath: typeof raw.outlook?.webhookPath === "string" && raw.outlook.webhookPath.trim()
+        ? raw.outlook.webhookPath.trim()
+        : "/outlook/webhook",
+      webhookHost: typeof raw.outlook?.webhookHost === "string" && raw.outlook.webhookHost.trim()
+        ? raw.outlook.webhookHost.trim()
+        : "127.0.0.1",
+      webhookPort: Number.isFinite(raw.outlook?.webhookPort) ? Number(raw.outlook.webhookPort) : 4634,
+      publicUrl: typeof raw.outlook?.publicUrl === "string" ? raw.outlook.publicUrl.trim().replace(/\/$/, "") : "",
     },
     security: {
       level,
