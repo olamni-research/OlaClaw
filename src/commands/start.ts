@@ -318,9 +318,11 @@ export async function start(args: string[] = []) {
   await writePidFile();
   let web: WebServerHandle | null = null;
   let discordStopGateway: (() => void) | null = null;
+  let whatsappStopServer: (() => void) | null = null;
 
   async function shutdown() {
     if (discordStopGateway) discordStopGateway();
+    if (whatsappStopServer) whatsappStopServer();
     if (web) web.stop();
     await teardownStatusline();
     await cleanupPidFile();
@@ -394,6 +396,44 @@ export async function start(args: string[] = []) {
 
   await initDiscord(currentSettings.discord.token);
   if (!discordToken) console.log("  Discord: not configured");
+
+  // --- WhatsApp (extension) ---
+  let whatsappSendToUser: ((phone: string, text: string) => Promise<void>) | null = null;
+  let whatsappKey = ""; // token+phoneNumberId composite — re-init if either changes
+
+  async function initWhatsApp(cfg: Settings["whatsapp"]) {
+    const nextKey = cfg.token && cfg.phoneNumberId && cfg.appSecret && cfg.verifyToken
+      ? `${cfg.token}:${cfg.phoneNumberId}:${cfg.webhookPort}`
+      : "";
+    if (nextKey === whatsappKey) return;
+
+    if (whatsappStopServer) {
+      whatsappStopServer();
+      whatsappStopServer = null;
+      whatsappSendToUser = null;
+    }
+
+    if (!nextKey) {
+      if (whatsappKey) console.log(`[${ts()}] WhatsApp: disabled`);
+      whatsappKey = "";
+      return;
+    }
+
+    try {
+      const { startWebhookServer, stopWebhookServer, sendMessageToUser } =
+        await import("../../extensions/whatsapp/whatsapp");
+      startWebhookServer(debugFlag);
+      whatsappStopServer = stopWebhookServer;
+      whatsappSendToUser = sendMessageToUser;
+      whatsappKey = nextKey;
+      console.log(`[${ts()}] WhatsApp: enabled`);
+    } catch (err) {
+      console.error(`[${ts()}] WhatsApp init failed:`, err);
+    }
+  }
+
+  await initWhatsApp(currentSettings.whatsapp);
+  if (!whatsappKey) console.log("  WhatsApp: not configured");
 
   function isAddrInUse(err: unknown): boolean {
     if (!err || typeof err !== "object") return false;
@@ -661,6 +701,9 @@ export async function start(args: string[] = []) {
 
       // Discord changes
       await initDiscord(newSettings.discord.token);
+
+      // WhatsApp changes
+      await initWhatsApp(newSettings.whatsapp);
     } catch (err) {
       console.error(`[${ts()}] Hot-reload error:`, err);
     }

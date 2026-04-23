@@ -69,6 +69,17 @@ const DEFAULT_SETTINGS: Settings = {
   },
   telegram: { token: "", allowedUserIds: [] },
   discord: { token: "", allowedUserIds: [], listenChannels: [] },
+  whatsapp: {
+    token: "",
+    phoneNumberId: "",
+    appSecret: "",
+    verifyToken: "",
+    allowedPhoneNumbers: [],
+    apiVersion: "v21.0",
+    webhookPath: "/whatsapp/webhook",
+    webhookHost: "127.0.0.1",
+    webhookPort: 4633,
+  },
   // Default to "strict" (no Bash/WebSearch/WebFetch). "moderate" gives Claude
   // all tools under a prompt-level directory guard that prompt injection can
   // bypass — opt into it explicitly if you need it.
@@ -102,6 +113,18 @@ export interface DiscordConfig {
   listenChannels: string[]; // Channel IDs where bot responds to all messages (no mention needed)
 }
 
+export interface WhatsAppConfig {
+  token: string;               // permanent access token (Meta System User)
+  phoneNumberId: string;       // WhatsApp Business phone number ID
+  appSecret: string;           // Meta app secret (used to verify webhook signatures)
+  verifyToken: string;         // string we chose when subscribing the webhook
+  allowedPhoneNumbers: string[]; // E.164 wa_id values (digits only, no leading +)
+  apiVersion: string;          // Graph API version, e.g. "v21.0"
+  webhookPath: string;         // path this process listens on (default /whatsapp/webhook)
+  webhookHost: string;         // bind host (default 127.0.0.1 — put behind TLS reverse proxy)
+  webhookPort: number;         // bind port (default 4633)
+}
+
 export type SecurityLevel =
   | "locked"
   | "strict"
@@ -124,6 +147,7 @@ export interface Settings {
   heartbeat: HeartbeatConfig;
   telegram: TelegramConfig;
   discord: DiscordConfig;
+  whatsapp: WhatsAppConfig;
   security: SecurityConfig;
   web: WebConfig;
   stt: SttConfig;
@@ -270,6 +294,25 @@ function parseSettings(raw: Record<string, any>): Settings {
       listenChannels: Array.isArray(raw.discord?.listenChannels)
         ? raw.discord.listenChannels.map(String)
         : [],
+    },
+    whatsapp: {
+      token: typeof raw.whatsapp?.token === "string" ? raw.whatsapp.token.trim() : "",
+      phoneNumberId: typeof raw.whatsapp?.phoneNumberId === "string" ? raw.whatsapp.phoneNumberId.trim() : "",
+      appSecret: typeof raw.whatsapp?.appSecret === "string" ? raw.whatsapp.appSecret.trim() : "",
+      verifyToken: typeof raw.whatsapp?.verifyToken === "string" ? raw.whatsapp.verifyToken.trim() : "",
+      allowedPhoneNumbers: Array.isArray(raw.whatsapp?.allowedPhoneNumbers)
+        ? raw.whatsapp.allowedPhoneNumbers.map(String).map((s: string) => s.replace(/^\+/, "").trim()).filter(Boolean)
+        : [],
+      apiVersion: typeof raw.whatsapp?.apiVersion === "string" && raw.whatsapp.apiVersion.trim()
+        ? raw.whatsapp.apiVersion.trim()
+        : "v21.0",
+      webhookPath: typeof raw.whatsapp?.webhookPath === "string" && raw.whatsapp.webhookPath.trim()
+        ? raw.whatsapp.webhookPath.trim()
+        : "/whatsapp/webhook",
+      webhookHost: typeof raw.whatsapp?.webhookHost === "string" && raw.whatsapp.webhookHost.trim()
+        ? raw.whatsapp.webhookHost.trim()
+        : "127.0.0.1",
+      webhookPort: Number.isFinite(raw.whatsapp?.webhookPort) ? Number(raw.whatsapp.webhookPort) : 4633,
     },
     security: {
       level,
