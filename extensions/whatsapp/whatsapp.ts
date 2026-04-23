@@ -1,9 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
-import { ensureProjectClaudeMd, runUserMessage } from "../../src/runner";
+import { mkdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { ensureProjectClaudeMd, runUserMessage, compactCurrentSession } from "../../src/runner";
 import { getSettings, loadSettings } from "../../src/config";
-import { resetSession } from "../../src/sessions";
+import { resetSession, peekSession } from "../../src/sessions";
 import { transcribeAudioToText } from "../../src/whisper";
 import { resolveSkillPrompt } from "../../src/skills";
 
@@ -193,6 +195,101 @@ async function sendText(
   }
 }
 
+// --- Media upload (for [send-file]) ---
+
+const OUTBOUND_MIME: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".3gp": "video/3gpp",
+};
+
+type OutboundKind = "image" | "document" | "audio" | "video";
+
+function classifyFile(filename: string): { kind: OutboundKind; mime: string } {
+  const ext = extname(filename).toLowerCase();
+  const mime = OUTBOUND_MIME[ext] ?? "application/octet-stream";
+  if (mime.startsWith("image/")) return { kind: "image", mime };
+  if (mime.startsWith("audio/")) return { kind: "audio", mime };
+  if (mime.startsWith("video/")) return { kind: "video", mime };
+  return { kind: "document", mime };
+}
+
+async function uploadMedia(
+  token: string,
+  version: string,
+  phoneNumberId: string,
+  filePath: string,
+  mime: string
+): Promise<string> {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mime);
+  form.append("file", file, basename(filePath));
+
+  const res = await fetch(`${apiBase(version)}/${phoneNumberId}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`WhatsApp media upload failed: ${res.status} ${text}`);
+  }
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error(`WhatsApp media upload returned no id: ${JSON.stringify(data)}`);
+  return data.id;
+}
+
+async function sendMedia(
+  token: string,
+  version: string,
+  phoneNumberId: string,
+  to: string,
+  filePath: string,
+  replyTo?: string
+): Promise<void> {
+  const { kind, mime } = classifyFile(filePath);
+  const mediaId = await uploadMedia(token, version, phoneNumberId, filePath, mime);
+  const filename = basename(filePath);
+
+  const mediaObject: Record<string, unknown> = { id: mediaId };
+  if (kind === "document") mediaObject.filename = filename;
+
+  const body: Record<string, unknown> = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: kind,
+    [kind]: mediaObject,
+  };
+  if (replyTo) body.context = { message_id: replyTo };
+
+  await postGraph(token, version, `${phoneNumberId}/messages`, body);
+}
+
 async function sendReaction(
   token: string,
   version: string,
@@ -377,6 +474,91 @@ async function handleMessage(
     return;
   }
 
+  if (command === "/compact") {
+    await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "⏳ Compacting session...", message.id);
+    const result = await compactCurrentSession();
+    await sendText(config.token, config.apiVersion, config.phoneNumberId, from, result.message, message.id);
+    return;
+  }
+
+  if (command === "/status") {
+    const session = await peekSession();
+    const settings = getSettings();
+    if (!session) {
+      await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "📊 No active session.", message.id);
+      return;
+    }
+    const lines = [
+      "*Session Status*",
+      `Session: ${session.sessionId.slice(0, 8)}`,
+      `Turns: ${session.turnCount ?? 0}`,
+      `Model: ${settings.model || "default"}`,
+      `Security: ${settings.security.level}`,
+      `Created: ${session.createdAt}`,
+      `Last used: ${session.lastUsedAt}`,
+    ];
+    await sendText(config.token, config.apiVersion, config.phoneNumberId, from, lines.join("\n"), message.id);
+    return;
+  }
+
+  if (command === "/context") {
+    const session = await peekSession();
+    if (!session) {
+      await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "No active session.", message.id);
+      return;
+    }
+    const projectSlug = process.cwd().replace(/\\/g, "/").replace(/\//g, "-").replace(/:/g, "-");
+    const jsonlPath = `${homedir()}/.claude/projects/${projectSlug}/${session.sessionId}.jsonl`;
+    if (!existsSync(jsonlPath)) {
+      await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "Conversation file not found.", message.id);
+      return;
+    }
+    try {
+      const raw = await readFile(jsonlPath, "utf8");
+      let lastUsage: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | null = null;
+      let totalOutput = 0;
+      for (const line of raw.trim().split("\n")) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.message?.usage) lastUsage = obj.message.usage;
+          if (obj.message?.usage?.output_tokens) totalOutput += obj.message.usage.output_tokens;
+        } catch {}
+      }
+      if (!lastUsage) {
+        await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "No usage data found.", message.id);
+        return;
+      }
+      const input = lastUsage.input_tokens ?? 0;
+      const cacheCreation = lastUsage.cache_creation_input_tokens ?? 0;
+      const cacheRead = lastUsage.cache_read_input_tokens ?? 0;
+      const totalContext = input + cacheCreation + cacheRead;
+      const maxContext = 200000;
+      const pct = ((totalContext / maxContext) * 100).toFixed(1);
+      const msg = [
+        `*Context Window*  ${pct}%`,
+        ``,
+        `Total: ${totalContext.toLocaleString()} / ${maxContext.toLocaleString()} tokens`,
+        `  Input: ${input.toLocaleString()}`,
+        `  Cache creation: ${cacheCreation.toLocaleString()}`,
+        `  Cache read: ${cacheRead.toLocaleString()}`,
+        `  Output (cumulative): ${totalOutput.toLocaleString()}`,
+        ``,
+        `Turns: ${session.turnCount ?? 0}`,
+      ].join("\n");
+      await sendText(config.token, config.apiVersion, config.phoneNumberId, from, msg, message.id);
+    } catch (err) {
+      await sendText(
+        config.token,
+        config.apiVersion,
+        config.phoneNumberId,
+        from,
+        `Failed to read context: ${err instanceof Error ? err.message : err}`,
+        message.id
+      );
+    }
+    return;
+  }
+
   // Reaction-only events: just log and drop.
   if (message.type === "reaction") {
     debugLog(`Reaction from ${from}: ${message.reaction?.emoji ?? "?"} on ${message.reaction?.message_id ?? "?"}`);
@@ -432,7 +614,7 @@ async function handleMessage(
 
   // Skill routing
   let skillContext: string | null = null;
-  if (command && !["/start", "/reset"].includes(command)) {
+  if (command && !["/start", "/reset", "/compact", "/status", "/context"].includes(command)) {
     try {
       skillContext = await resolveSkillPrompt(command);
     } catch (err) {
@@ -505,20 +687,22 @@ async function handleMessage(
           config.apiVersion,
           config.phoneNumberId,
           from,
-          `Refused to send file (path outside project): ${fp.split(/[\\/]/).pop()}`
+          `Refused to send file (path outside project): ${basename(fp)}`
         );
         continue;
       }
-      // TODO: implement document upload via /media endpoint then send type=document.
-      // For now, warn that file sending isn't wired up yet.
-      console.warn(`[WhatsApp] [send-file] not yet implemented; would have sent ${fp}`);
-      await sendText(
-        config.token,
-        config.apiVersion,
-        config.phoneNumberId,
-        from,
-        `(file send not yet implemented: ${fp.split(/[\\/]/).pop()})`
-      );
+      try {
+        await sendMedia(config.token, config.apiVersion, config.phoneNumberId, from, fp, message.id);
+      } catch (err) {
+        console.error(`[WhatsApp] sendMedia failed for ${label}: ${err instanceof Error ? err.message : err}`);
+        await sendText(
+          config.token,
+          config.apiVersion,
+          config.phoneNumberId,
+          from,
+          `Failed to send file: ${basename(fp)}`
+        );
+      }
     }
     if (!cleanedText && filePaths.length === 0) {
       await sendText(config.token, config.apiVersion, config.phoneNumberId, from, "(empty response)", message.id);

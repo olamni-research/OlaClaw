@@ -6,11 +6,11 @@ Receive WhatsApp messages in OlaClaw via Meta's WhatsApp Cloud API and respond u
 
 - Inbound text, images, voice (auto-transcribed), and documents
 - Outbound text with chunking at 4096 chars
+- Outbound files via `[send-file:path]` — auto-classifies as image / audio / video / document
 - Native WhatsApp reactions via the standard `[react:<emoji>]` directive
-- `[send-file:...]` directive with project-scope sandboxing
 - Default-deny allowlist (empty list blocks everyone)
 - HMAC-SHA256 webhook signature verification — unsigned/mismatched requests get 403
-- `/start` and `/reset` built-in commands; skill slash commands also resolve (e.g. `/status`)
+- Built-in commands: `/start`, `/reset`, `/status`, `/context`, `/compact`; skill slash commands also resolve
 
 ## Prerequisites (Meta side)
 
@@ -79,11 +79,11 @@ You'll see `WhatsApp: enabled` and the webhook listening line. Send yourself a m
 - **Keep `webhookHost` at `127.0.0.1`.** If you bind to `0.0.0.0`, anyone on your network could hit the raw HTTP server (still signature-protected, but unnecessary attack surface).
 - **Allowlist everyone you want to talk to.** Empty list = bot is mute. This is intentional — a misconfigured bot with an open allowlist is a prompt-injection vector into a Claude session with tool access.
 
-## Limitations (first cut)
+## Limitations
 
-- `[send-file:...]` is detected but upload isn't implemented yet — you'll get a placeholder message. Uploading docs requires two Graph API calls (`POST /PHONE_ID/media` then `POST /PHONE_ID/messages` with the returned media ID). Track this in the issue tracker if you need it soon.
 - Group messaging — WhatsApp's Cloud API doesn't expose groups yet, so this extension is 1:1 only.
 - No template messages. The 24-hour customer service window applies: the user has to message you first, then you have 24 hours to reply freely.
+- Unknown file extensions fall back to `application/octet-stream` and are sent as documents — check WhatsApp's [supported media types](https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media) if something doesn't render.
 
 ## File layout
 
