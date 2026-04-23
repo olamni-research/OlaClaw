@@ -3,7 +3,7 @@ import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
 
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
+const HEARTBEAT_DIR = join(process.cwd(), ".claude", "olaclaw");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
 const JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
@@ -141,7 +141,7 @@ export interface WebConfig {
 
 export interface SttConfig {
   /** Base URL of an OpenAI-compatible STT API, e.g. "http://127.0.0.1:8000".
-   *  When set, claudeclaw routes voice transcription through this API instead
+   *  When set, olaclaw routes voice transcription through this API instead
    *  of the bundled whisper.cpp binary. */
   baseUrl: string;
   /** Model name passed to the API (default: "Systran/faster-whisper-large-v3") */

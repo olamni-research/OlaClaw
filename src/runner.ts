@@ -12,16 +12,16 @@ import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
 import { selectModel } from "./model-router";
 
-const LOGS_DIR = join(process.cwd(), ".claude/claudeclaw/logs");
-// Resolve prompts relative to the claudeclaw installation, not the project dir
+const LOGS_DIR = join(process.cwd(), ".claude/olaclaw/logs");
+// Resolve prompts relative to the olaclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
 const HEARTBEAT_PROMPT_FILE = join(PROMPTS_DIR, "heartbeat", "HEARTBEAT.md");
 // Project-level prompt overrides live here (gitignored, user-owned)
-const PROJECT_PROMPTS_DIR = join(process.cwd(), ".claude", "claudeclaw", "prompts");
+const PROJECT_PROMPTS_DIR = join(process.cwd(), ".claude", "olaclaw", "prompts");
 const PROJECT_CLAUDE_MD = join(process.cwd(), "CLAUDE.md");
 const LEGACY_PROJECT_CLAUDE_MD = join(process.cwd(), ".claude", "CLAUDE.md");
-const CLAUDECLAW_BLOCK_START = "<!-- claudeclaw:managed:start -->";
-const CLAUDECLAW_BLOCK_END = "<!-- claudeclaw:managed:end -->";
+const OLACLAW_BLOCK_START = "<!-- olaclaw:managed:start -->";
+const OLACLAW_BLOCK_END = "<!-- olaclaw:managed:end -->";
 
 /**
  * Compact configuration.
@@ -186,9 +186,9 @@ export async function ensureProjectClaudeMd(): Promise<void> {
 
   const promptContent = (await loadPrompts()).trim();
   const managedBlock = [
-    CLAUDECLAW_BLOCK_START,
+    OLACLAW_BLOCK_START,
     promptContent,
-    CLAUDECLAW_BLOCK_END,
+    OLACLAW_BLOCK_END,
   ].join("\n");
 
   let content = "";
@@ -205,9 +205,9 @@ export async function ensureProjectClaudeMd(): Promise<void> {
 
   const normalized = content.trim();
   const hasManagedBlock =
-    normalized.includes(CLAUDECLAW_BLOCK_START) && normalized.includes(CLAUDECLAW_BLOCK_END);
+    normalized.includes(OLACLAW_BLOCK_START) && normalized.includes(OLACLAW_BLOCK_END);
   const managedPattern = new RegExp(
-    `${CLAUDECLAW_BLOCK_START}[\\s\\S]*?${CLAUDECLAW_BLOCK_END}`,
+    `${OLACLAW_BLOCK_START}[\\s\\S]*?${OLACLAW_BLOCK_END}`,
     "m"
   );
 
@@ -276,7 +276,7 @@ async function loadPrompts(): Promise<string> {
 /**
  * Load the heartbeat prompt template.
  * Project-level override takes precedence: place a file at
- * .claude/claudeclaw/prompts/HEARTBEAT.md to fully replace the built-in template.
+ * .claude/olaclaw/prompts/HEARTBEAT.md to fully replace the built-in template.
  */
 export async function loadHeartbeatPromptTemplate(): Promise<string> {
   const projectOverride = join(PROJECT_PROMPTS_DIR, "HEARTBEAT.md");
@@ -398,7 +398,7 @@ async function execClaude(name: string, prompt: string, threadId?: string): Prom
   // --append-system-prompt does not persist across --resume.
   const promptContent = await loadPrompts();
   const appendParts: string[] = [
-    "You are running inside ClaudeClaw.",
+    "You are running inside OlaClaw.",
   ];
   if (promptContent) appendParts.push(promptContent);
 
@@ -565,7 +565,7 @@ async function streamClaude(
   if (existing) args.push("--resume", existing.sessionId);
 
   const promptContent = await loadPrompts();
-  const appendParts: string[] = ["You are running inside ClaudeClaw."];
+  const appendParts: string[] = ["You are running inside OlaClaw."];
   if (promptContent) appendParts.push(promptContent);
 
   if (existsSync(PROJECT_CLAUDE_MD)) {

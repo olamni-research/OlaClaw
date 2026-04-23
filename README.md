@@ -1,21 +1,21 @@
 <p align="center">
-  <img src="images/02-classic-terminal@2x.png" alt="ClaudeClaw Banner" />
+  <img src="images/02-classic-terminal@2x.png" alt="OlaClaw Banner" />
 </p>
 
 
 <p align="center">
   <img src="https://awesome.re/badge.svg" alt="Awesome" />
-  <a href="https://github.com/moazbuilds/ClaudeClaw/stargazers">
-    <img src="https://img.shields.io/github/stars/moazbuilds/ClaudeClaw?style=flat-square&color=f59e0b" alt="GitHub Stars" />
+  <a href="https://github.com/moazbuilds/OlaClaw/stargazers">
+    <img src="https://img.shields.io/github/stars/moazbuilds/OlaClaw?style=flat-square&color=f59e0b" alt="GitHub Stars" />
   </a>
-  <a href="https://github.com/moazbuilds/ClaudeClaw">
+  <a href="https://github.com/moazbuilds/OlaClaw">
     <img src="https://img.shields.io/static/v1?label=downloads&message=~15k%20every%2014%20days&color=2da44e&style=flat-square" alt="Downloads ~15k every 14 days" />
   </a>
-  <a href="https://github.com/moazbuilds/ClaudeClaw/commits/master">
-    <img src="https://img.shields.io/github/last-commit/moazbuilds/ClaudeClaw?style=flat-square&color=0ea5e9" alt="Last Commit" />
+  <a href="https://github.com/moazbuilds/OlaClaw/commits/master">
+    <img src="https://img.shields.io/github/last-commit/moazbuilds/OlaClaw?style=flat-square&color=0ea5e9" alt="Last Commit" />
   </a>
-  <a href="https://github.com/moazbuilds/ClaudeClaw/graphs/contributors">
-    <img src="https://img.shields.io/github/contributors/moazbuilds/ClaudeClaw?style=flat-square&color=a855f7" alt="Contributors" />
+  <a href="https://github.com/moazbuilds/OlaClaw/graphs/contributors">
+    <img src="https://img.shields.io/github/contributors/moazbuilds/OlaClaw?style=flat-square&color=a855f7" alt="Contributors" />
   </a>
   <a href="https://x.com/moazbuilds">
     <img src="https://img.shields.io/badge/X-%40moazbuilds-000000?style=flat-square&logo=x" alt="X @moazbuilds" />
@@ -24,13 +24,13 @@
 
 <p align="center"><b>A lightweight, open-source OpenClaw version built into your Claude Code.</b></p>
 
-ClaudeClaw turns your Claude Code into a personal assistant that never sleeps. It runs as a background daemon, executing tasks on a schedule, responding to messages on Telegram and Discord, transcribing voice commands, and integrating with any service you need.
+OlaClaw turns your Claude Code into a personal assistant that never sleeps. It runs as a background daemon, executing tasks on a schedule, responding to messages on Telegram and Discord, transcribing voice commands, and integrating with any service you need.
 
-> Note: Please don't use ClaudeClaw for hacking any bank system or doing any illegal activities. Thank you.
+> Note: Please don't use OlaClaw for hacking any bank system or doing any illegal activities. Thank you.
 
-## Why ClaudeClaw?
+## Why OlaClaw?
 
-| Category | ClaudeClaw | OpenClaw |
+| Category | OlaClaw | OpenClaw |
 | --- | --- | --- |
 | Anthropic Will Come After You | No | Yes |
 | API Overhead | Directly uses your Claude Code subscription | Nightmare |
@@ -46,22 +46,22 @@ ClaudeClaw turns your Claude Code into a personal assistant that never sleeps. I
 ## Getting Started in 5 Minutes
 
 ```bash
-claude plugin marketplace add moazbuilds/claudeclaw
-claude plugin install claudeclaw
+claude plugin marketplace add moazbuilds/olaclaw
+claude plugin install olaclaw
 ```
 Then open a Claude Code session and run:
 ```
-/claudeclaw:start
+/olaclaw:start
 ```
 The setup wizard walks you through model, heartbeat, Telegram, Discord, and security, then your daemon is live with a web dashboard.
 
 ## What Would Be Built Next?
 
-> **Mega Post:** Help shape the next ClaudeClaw features.
-> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/claudeclaw/issues/14)**.
+> **Mega Post:** Help shape the next OlaClaw features.
+> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/olaclaw/issues/14)**.
 
 <p align="center">
-  <a href="https://github.com/moazbuilds/claudeclaw/issues/14">
+  <a href="https://github.com/moazbuilds/olaclaw/issues/14">
     <img src="https://img.shields.io/badge/Roadmap-Mega%20Post-blue?style=for-the-badge&logo=github" alt="Roadmap Mega Post" />
   </a>
 </p>
@@ -95,10 +95,10 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 ## FAQ
 
 <details open>
-  <summary><strong>Can ClaudeClaw do &lt;something&gt;?</strong></summary>
+  <summary><strong>Can OlaClaw do &lt;something&gt;?</strong></summary>
   <p>
-    If Claude Code can do it, ClaudeClaw can do it too. ClaudeClaw adds cron jobs,
-    heartbeats, and Telegram/Discord bridges on top. You can also give your ClaudeClaw new
+    If Claude Code can do it, OlaClaw can do it too. OlaClaw adds cron jobs,
+    heartbeats, and Telegram/Discord bridges on top. You can also give your OlaClaw new
     skills and teach it custom workflows.
   </p>
 </details>
@@ -106,14 +106,14 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 <details open>
   <summary><strong>Is this project breaking Anthropic ToS?</strong></summary>
   <p>
-    No. ClaudeClaw is local usage inside the Claude Code ecosystem. It wraps Claude Code
+    No. OlaClaw is local usage inside the Claude Code ecosystem. It wraps Claude Code
     directly and does not require third-party OAuth outside that flow.
     If you build your own scripts to do the same thing, it would be the same.
   </p>
 </details>
 
 <details open>
-  <summary><strong>Will Anthropic sue you for building ClaudeClaw?</strong></summary>
+  <summary><strong>Will Anthropic sue you for building OlaClaw?</strong></summary>
   <p>
     I hope not.
   </p>
@@ -131,13 +131,13 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 ### Claude Code Folder-Based Status Bar
 ![Claude Code folder-based status bar](images/bar.png)
 
-### Cool UI to Manage and Check Your ClaudeClaw
-![Cool UI to manage and check your ClaudeClaw](images/dashboard.png)
+### Cool UI to Manage and Check Your OlaClaw
+![Cool UI to manage and check your OlaClaw](images/dashboard.png)
 
 ## Contributors
 
-Thanks for helping make ClaudeClaw better.
+Thanks for helping make OlaClaw better.
 
-<a href="https://github.com/moazbuilds/claudeclaw/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=moazbuilds/claudeclaw" />
+<a href="https://github.com/moazbuilds/olaclaw/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=moazbuilds/olaclaw" />
 </a>

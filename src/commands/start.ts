@@ -12,7 +12,7 @@ import { startWebUi, type WebServerHandle } from "../web";
 import type { Job } from "../jobs";
 
 const CLAUDE_DIR = join(process.cwd(), ".claude");
-const HEARTBEAT_DIR = join(CLAUDE_DIR, "claudeclaw");
+const HEARTBEAT_DIR = join(CLAUDE_DIR, "olaclaw");
 const STATUSLINE_FILE = join(CLAUDE_DIR, "statusline.cjs");
 const CLAUDE_SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
 const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.url));
@@ -23,7 +23,7 @@ const STATUSLINE_SCRIPT = `#!/usr/bin/env node
 const { readFileSync } = require("fs");
 const { join } = require("path");
 
-const DIR = join(__dirname, "claudeclaw");
+const DIR = join(__dirname, "olaclaw");
 const STATE_FILE = join(DIR, "state.json");
 const PID_FILE = join(DIR, "daemon.pid");
 
@@ -56,7 +56,7 @@ var TR = DIM + "\\u256e" + R;
 var BL = DIM + "\\u2570" + R;
 var BR = DIM + "\\u256f" + R;
 var H = DIM + "\\u2500" + R;
-var HEADER = TL + H.repeat(6) + " \\ud83e\\udd9e ClaudeClaw \\ud83e\\udd9e " + H.repeat(6) + TR;
+var HEADER = TL + H.repeat(6) + " \\ud83e\\udd9e OlaClaw \\ud83e\\udd9e " + H.repeat(6) + TR;
 var FOOTER = BL + H.repeat(30) + BR;
 
 if (!alive()) {
@@ -241,7 +241,7 @@ export async function start(args: string[] = []) {
   }
   const payload = payloadParts.join(" ").trim();
   if (hasPromptFlag && !payload) {
-    console.error("Usage: claudeclaw start --prompt <prompt> [--trigger] [--telegram] [--discord] [--debug] [--web] [--web-port <port>] [--replace-existing]");
+    console.error("Usage: olaclaw start --prompt <prompt> [--trigger] [--telegram] [--discord] [--debug] [--web] [--web-port <port>] [--replace-existing]");
     process.exit(1);
   }
   if (!hasPromptFlag && payload) {
@@ -266,7 +266,7 @@ export async function start(args: string[] = []) {
     const existingPid = await checkExistingDaemon();
     if (existingPid) {
       console.error(`\x1b[31mAborted: daemon already running in this directory (PID ${existingPid})\x1b[0m`);
-      console.error("Use `claudeclaw send <message> [--telegram] [--discord]` while daemon is running.");
+      console.error("Use `olaclaw send <message> [--telegram] [--discord]` while daemon is running.");
       process.exit(1);
     }
 
@@ -329,7 +329,7 @@ export async function start(args: string[] = []) {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
-  console.log("ClaudeClaw daemon started");
+  console.log("OlaClaw daemon started");
   console.log(`  PID: ${process.pid}`);
   console.log(`  Security: ${settings.security.level}`);
   if (settings.security.allowedTools.length > 0)

@@ -1,7 +1,7 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
 
-const JOBS_DIR = join(process.cwd(), ".claude", "claudeclaw", "jobs");
+const JOBS_DIR = join(process.cwd(), ".claude", "olaclaw", "jobs");
 
 export interface Job {
   name: string;

@@ -942,7 +942,7 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     const chatInput = $("chat-input");
     const chatSend = $("chat-send");
 
-    var CHAT_STORAGE_KEY = "claudeclaw.chat.history";
+    var CHAT_STORAGE_KEY = "olaclaw.chat.history";
     let chatBusy = false;
     let chatAbortController = null;
     let chatElapsedTimer = null;
