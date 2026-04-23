@@ -79,6 +79,19 @@ You'll see `WhatsApp: enabled` and the webhook listening line. Send yourself a m
 - **Keep `webhookHost` at `127.0.0.1`.** If you bind to `0.0.0.0`, anyone on your network could hit the raw HTTP server (still signature-protected, but unnecessary attack surface).
 - **Allowlist everyone you want to talk to.** Empty list = bot is mute. This is intentional — a misconfigured bot with an open allowlist is a prompt-injection vector into a Claude session with tool access.
 
+## Heartbeat & job forwarding
+
+Set `heartbeat.forwardToWhatsApp: true` in settings to get heartbeat output forwarded to your allowed WhatsApp numbers (same pattern as `forwardToTelegram`). Scheduled jobs forward to all three channels automatically based on each job's `notify` setting.
+
+From the CLI:
+
+```bash
+olaclaw send "hello from the daemon" --whatsapp
+olaclaw start --prompt "..." --trigger --whatsapp
+```
+
+**Note:** WhatsApp's 24-hour customer service window applies to forwarded messages. If no one has messaged the bot in the last 24 hours, the API call will fail — you'd need a template message to break the silence, which this extension doesn't handle yet.
+
 ## Limitations
 
 - Group messaging — WhatsApp's Cloud API doesn't expose groups yet, so this extension is 1:1 only.

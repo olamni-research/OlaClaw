@@ -5,10 +5,13 @@ import { loadSettings, initConfig } from "../config";
 export async function send(args: string[]) {
   const telegramFlag = args.includes("--telegram");
   const discordFlag = args.includes("--discord");
-  const message = args.filter((a) => a !== "--telegram" && a !== "--discord").join(" ");
+  const whatsappFlag = args.includes("--whatsapp");
+  const message = args
+    .filter((a) => a !== "--telegram" && a !== "--discord" && a !== "--whatsapp")
+    .join(" ");
 
   if (!message) {
-    console.error("Usage: olaclaw send <message> [--telegram] [--discord]");
+    console.error("Usage: olaclaw send <message> [--telegram] [--discord] [--whatsapp]");
     process.exit(1);
   }
 
@@ -96,6 +99,43 @@ export async function send(args: string[]) {
       }
     }
     console.log("Sent to Discord.");
+  }
+
+  if (whatsappFlag) {
+    const settings = await loadSettings();
+    const wa = settings.whatsapp;
+    if (!wa.token || !wa.phoneNumberId || wa.allowedPhoneNumbers.length === 0) {
+      console.error("WhatsApp is not configured in settings.");
+      process.exit(1);
+    }
+    const text = result.exitCode === 0
+      ? result.stdout || "(empty)"
+      : `error (exit ${result.exitCode}): ${result.stderr || "Unknown"}`;
+
+    for (const phone of wa.allowedPhoneNumbers) {
+      const res = await fetch(
+        `https://graph.facebook.com/${wa.apiVersion}/${wa.phoneNumberId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${wa.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: phone,
+            type: "text",
+            text: { body: text.slice(0, 4096), preview_url: false },
+          }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        console.error(`Failed to send to WhatsApp ${phone}: ${res.status} ${body}`);
+      }
+    }
+    console.log("Sent to WhatsApp.");
   }
 
   if (result.exitCode !== 0) process.exit(result.exitCode);

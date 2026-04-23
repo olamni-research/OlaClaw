@@ -66,6 +66,7 @@ const DEFAULT_SETTINGS: Settings = {
     prompt: "",
     excludeWindows: [],
     forwardToTelegram: true,
+    forwardToWhatsApp: false,
   },
   telegram: { token: "", allowedUserIds: [] },
   discord: { token: "", allowedUserIds: [], listenChannels: [] },
@@ -100,6 +101,7 @@ export interface HeartbeatConfig {
   prompt: string;
   excludeWindows: HeartbeatExcludeWindow[];
   forwardToTelegram: boolean;
+  forwardToWhatsApp: boolean;
 }
 
 export interface TelegramConfig {
@@ -281,6 +283,7 @@ function parseSettings(raw: Record<string, any>): Settings {
       prompt: raw.heartbeat?.prompt ?? "",
       excludeWindows: parseExcludeWindows(raw.heartbeat?.excludeWindows),
       forwardToTelegram: raw.heartbeat?.forwardToTelegram ?? false,
+      forwardToWhatsApp: raw.heartbeat?.forwardToWhatsApp ?? false,
     },
     telegram: {
       token: raw.telegram?.token ?? "",

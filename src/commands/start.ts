@@ -200,6 +200,7 @@ export async function start(args: string[] = []) {
   let hasTriggerFlag = false;
   let telegramFlag = false;
   let discordFlag = false;
+  let whatsappFlag = false;
   let debugFlag = false;
   let webFlag = false;
   let replaceExistingFlag = false;
@@ -216,6 +217,8 @@ export async function start(args: string[] = []) {
       telegramFlag = true;
     } else if (arg === "--discord") {
       discordFlag = true;
+    } else if (arg === "--whatsapp") {
+      whatsappFlag = true;
     } else if (arg === "--debug") {
       debugFlag = true;
     } else if (arg === "--web") {
@@ -241,7 +244,7 @@ export async function start(args: string[] = []) {
   }
   const payload = payloadParts.join(" ").trim();
   if (hasPromptFlag && !payload) {
-    console.error("Usage: olaclaw start --prompt <prompt> [--trigger] [--telegram] [--discord] [--debug] [--web] [--web-port <port>] [--replace-existing]");
+    console.error("Usage: olaclaw start --prompt <prompt> [--trigger] [--telegram] [--discord] [--whatsapp] [--debug] [--web] [--web-port <port>] [--replace-existing]");
     process.exit(1);
   }
   if (!hasPromptFlag && payload) {
@@ -254,6 +257,10 @@ export async function start(args: string[] = []) {
   }
   if (discordFlag && !hasTriggerFlag) {
     console.error("`--discord` with `start` requires `--trigger`.");
+    process.exit(1);
+  }
+  if (whatsappFlag && !hasTriggerFlag) {
+    console.error("`--whatsapp` with `start` requires `--trigger`.");
     process.exit(1);
   }
   if (hasPromptFlag && !hasTriggerFlag && (webFlag || webPortFlag !== null)) {
@@ -562,6 +569,18 @@ export async function start(args: string[] = []) {
     }
   }
 
+  function forwardToWhatsApp(label: string, result: { exitCode: number; stdout: string; stderr: string }) {
+    if (!whatsappSendToUser || currentSettings.whatsapp.allowedPhoneNumbers.length === 0) return;
+    const text = result.exitCode === 0
+      ? `${label ? `[${label}]\n` : ""}${result.stdout || "(empty)"}`
+      : `${label ? `[${label}] ` : ""}error (exit ${result.exitCode}): ${result.stderr || "Unknown"}`;
+    for (const phone of currentSettings.whatsapp.allowedPhoneNumbers) {
+      whatsappSendToUser(phone, text).catch((err) =>
+        console.error(`[WhatsApp] Failed to forward to ${phone}: ${err}`)
+      );
+    }
+  }
+
   // --- Heartbeat scheduling ---
   function scheduleHeartbeat() {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
@@ -607,10 +626,14 @@ export async function start(args: string[] = []) {
         })
         .then((r) => {
           if (!r) return;
-          const shouldForward = currentSettings.heartbeat.forwardToTelegram || !r.stdout.trim().startsWith("HEARTBEAT_OK");
+          const shouldForward =
+            currentSettings.heartbeat.forwardToTelegram ||
+            currentSettings.heartbeat.forwardToWhatsApp ||
+            !r.stdout.trim().startsWith("HEARTBEAT_OK");
           if (shouldForward) {
             forwardToTelegram("", r);
             forwardToDiscord("", r);
+            forwardToWhatsApp("", r);
           }
         });
       nextHeartbeatAt = nextAllowedHeartbeatAt(
@@ -636,6 +659,7 @@ export async function start(args: string[] = []) {
     console.log(triggerResult.stdout);
     if (telegramFlag) forwardToTelegram("", triggerResult);
     if (discordFlag) forwardToDiscord("", triggerResult);
+    if (whatsappFlag) forwardToWhatsApp("", triggerResult);
     if (triggerResult.exitCode !== 0) {
       console.error(`[${ts()}] Startup trigger failed (exit ${triggerResult.exitCode}). Daemon will continue running.`);
     }
@@ -746,6 +770,7 @@ export async function start(args: string[] = []) {
             if (job.notify === "error" && r.exitCode === 0) return;
             forwardToTelegram(job.name, r);
             forwardToDiscord(job.name, r);
+            forwardToWhatsApp(job.name, r);
           })
           .finally(async () => {
             if (job.recurring) return;
