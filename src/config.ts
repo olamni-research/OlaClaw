@@ -1,7 +1,18 @@
 import { join, isAbsolute } from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, chmod, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
+
+// Settings contains plaintext API tokens. Keep file readable only by the
+// current user so other local accounts can't read tokens via default umask.
+async function chmodSettingsPrivate(): Promise<void> {
+  if (process.platform === "win32") return;
+  try {
+    await chmod(SETTINGS_FILE, 0o600);
+  } catch {
+    // best-effort
+  }
+}
 
 const HEARTBEAT_DIR = join(process.cwd(), ".claude", "olaclaw");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
@@ -58,7 +69,10 @@ const DEFAULT_SETTINGS: Settings = {
   },
   telegram: { token: "", allowedUserIds: [] },
   discord: { token: "", allowedUserIds: [], listenChannels: [] },
-  security: { level: "moderate", allowedTools: [], disallowedTools: [] },
+  // Default to "strict" (no Bash/WebSearch/WebFetch). "moderate" gives Claude
+  // all tools under a prompt-level directory guard that prompt injection can
+  // bypass — opt into it explicitly if you need it.
+  security: { level: "strict", allowedTools: [], disallowedTools: [] },
   web: { enabled: false, host: "127.0.0.1", port: 4632 },
   stt: { baseUrl: "", model: "" },
 };
@@ -156,8 +170,9 @@ export async function initConfig(): Promise<void> {
   await mkdir(LOGS_DIR, { recursive: true });
 
   if (!existsSync(SETTINGS_FILE)) {
-    await Bun.write(SETTINGS_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2) + "\n");
+    await writeFile(SETTINGS_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2) + "\n", { mode: 0o600 });
   }
+  await chmodSettingsPrivate();
 }
 
 const VALID_LEVELS = new Set<SecurityLevel>([

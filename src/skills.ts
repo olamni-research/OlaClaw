@@ -118,6 +118,14 @@ export async function resolveSkillPrompt(command: string): Promise<string | null
   const pluginHint = colonIdx > 0 ? name.slice(0, colonIdx) : null;
   const skillName = colonIdx > 0 ? name.slice(colonIdx + 1) : name;
 
+  // Reject path separators and traversal. Slash-command names from Telegram /
+  // Discord flow into join(..., skillName, "SKILL.md") — "/" or ".." would let
+  // an attacker steer the lookup outside the skills directory tree.
+  const unsafe = /[\\/]/.test(skillName) || /[\\/]/.test(pluginHint ?? "") ||
+                  skillName === ".." || skillName === "." ||
+                  skillName.split(/[\\/]/).some((p) => p === "..");
+  if (unsafe) return null;
+
   const home = homedir();
   const projectSkillsDir = join(process.cwd(), ".claude", "skills");
   const globalSkillsDir = join(home, ".claude", "skills");

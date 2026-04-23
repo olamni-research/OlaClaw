@@ -55,16 +55,6 @@ Then open a Claude Code session and run:
 ```
 The setup wizard walks you through model, heartbeat, Telegram, Discord, and security, then your daemon is live with a web dashboard.
 
-## What Would Be Built Next?
-
-> **Mega Post:** Help shape the next OlaClaw features.
-> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/olaclaw/issues/14)**.
-
-<p align="center">
-  <a href="https://github.com/moazbuilds/olaclaw/issues/14">
-    <img src="https://img.shields.io/badge/Roadmap-Mega%20Post-blue?style=for-the-badge&logo=github" alt="Roadmap Mega Post" />
-  </a>
-</p>
 
 ## Features
 
@@ -103,41 +93,4 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
   </p>
 </details>
 
-<details open>
-  <summary><strong>Is this project breaking Anthropic ToS?</strong></summary>
-  <p>
-    No. OlaClaw is local usage inside the Claude Code ecosystem. It wraps Claude Code
-    directly and does not require third-party OAuth outside that flow.
-    If you build your own scripts to do the same thing, it would be the same.
-  </p>
-</details>
 
-<details open>
-  <summary><strong>Will Anthropic sue you for building OlaClaw?</strong></summary>
-  <p>
-    I hope not.
-  </p>
-</details>
-
-<details open>
-  <summary><strong>Are you ready to change this project name?</strong></summary>
-  <p>
-    If it bothers Anthropic, I might rename it to OpenClawd. Not sure yet.
-  </p>
-</details>
-
-## Screenshots
-
-### Claude Code Folder-Based Status Bar
-![Claude Code folder-based status bar](images/bar.png)
-
-### Cool UI to Manage and Check Your OlaClaw
-![Cool UI to manage and check your OlaClaw](images/dashboard.png)
-
-## Contributors
-
-Thanks for helping make OlaClaw better.
-
-<a href="https://github.com/moazbuilds/olaclaw/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=moazbuilds/olaclaw" />
-</a>

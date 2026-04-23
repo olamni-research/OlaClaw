@@ -142,7 +142,9 @@ function enableInProject(pluginKey: string, projectPath: string): void {
 function installDepsIfPresent(dir: string, pkgMgr: string, label: string): void {
   if (!existsSync(join(dir, "package.json"))) return;
   console.log(`    deps (${label}): ${pkgMgr} install`);
-  run(`${pkgMgr} install`, { cwd: dir, stdio: "inherit" });
+  // --ignore-scripts disables postinstall/preinstall hooks from third-party
+  // plugins, which would otherwise run arbitrary code on the user's machine.
+  run(`${pkgMgr} install --ignore-scripts`, { cwd: dir, stdio: "inherit" });
 }
 
 function startWhisperWarmupInBackground(): void {
@@ -401,6 +403,21 @@ function installOfficialPlugins(
 // ── Main ────────────────────────────────────────────────────────────
 
 export function preflight(projectPath: string): void {
+  // Whisper warmup is always safe — downloads a pinned binary + model.
+  mkdirSync(join(PLUGINS_DIR, "marketplaces"), { recursive: true });
+  mkdirSync(join(PLUGINS_DIR, "cache"), { recursive: true });
+  startWhisperWarmupInBackground();
+
+  // Plugin auto-install is opt-in. It clones third-party repos and runs
+  // their install scripts, which is a supply-chain risk. Users must opt in
+  // explicitly via OLACLAW_PREFLIGHT_AUTOINSTALL=1.
+  if (process.env.OLACLAW_PREFLIGHT_AUTOINSTALL !== "1") {
+    console.log(
+      "preflight: plugin auto-install disabled (set OLACLAW_PREFLIGHT_AUTOINSTALL=1 to opt in)"
+    );
+    return;
+  }
+
   try { run("git --version"); } catch {
     console.error("preflight: git is required but not installed.");
     process.exit(1);
@@ -411,10 +428,6 @@ export function preflight(projectPath: string): void {
     console.error("preflight: bun or npm is required.");
     process.exit(1);
   }
-
-  mkdirSync(join(PLUGINS_DIR, "marketplaces"), { recursive: true });
-  mkdirSync(join(PLUGINS_DIR, "cache"), { recursive: true });
-  startWhisperWarmupInBackground();
 
   let installed = 0;
   let skipped = 0;

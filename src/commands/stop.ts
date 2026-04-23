@@ -1,7 +1,21 @@
-import { writeFile, unlink, readdir, readFile } from "fs/promises";
+import { writeFile, unlink, readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { getPidPath, cleanupPidFile } from "../pid";
+
+// Extra sanity check before sending SIGTERM to a PID discovered via
+// ~/.claude/projects/ directory enumeration. Ensures the path really looks
+// like an OlaClaw project (has settings.json next to daemon.pid) — otherwise
+// a malicious fake project could be used to have us kill an unrelated PID.
+async function looksLikeOlaclawProject(projectPath: string): Promise<boolean> {
+  try {
+    const settingsPath = join(projectPath, ".claude", "olaclaw", "settings.json");
+    const s = await stat(settingsPath);
+    return s.isFile();
+  } catch {
+    return false;
+  }
+}
 
 const CLAUDE_DIR = join(process.cwd(), ".claude");
 const HEARTBEAT_DIR = join(CLAUDE_DIR, "olaclaw");
@@ -68,10 +82,17 @@ export async function stopAll() {
     const projectPath = "/" + dir.slice(1).replace(/-/g, "/");
     const pidFile = join(projectPath, ".claude", "olaclaw", "daemon.pid");
 
+    // Skip anything that isn't clearly an OlaClaw project. Without this
+    // check, a malicious ~/.claude/projects/<name>/ entry could point our
+    // SIGTERM at an unrelated PID.
+    if (!(await looksLikeOlaclawProject(projectPath))) continue;
+
     let pid: string;
     try {
       pid = (await readFile(pidFile, "utf-8")).trim();
-      process.kill(Number(pid), 0);
+      const pidNum = Number(pid);
+      if (!Number.isInteger(pidNum) || pidNum <= 1) continue;
+      process.kill(pidNum, 0);
     } catch {
       continue;
     }

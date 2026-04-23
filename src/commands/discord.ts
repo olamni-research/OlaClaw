@@ -462,8 +462,16 @@ async function handleMessageCreate(token: string, message: DiscordMessage): Prom
     `Handle message channel=${channelId} from=${userId} reason=${triggerReason} text="${content.slice(0, 80)}"`,
   );
 
-  // Authorization check
-  if (config.allowedUserIds.length > 0 && !config.allowedUserIds.includes(userId)) {
+  // Authorization check — default-deny: empty allowlist authorises nobody.
+  // Prevents a misconfigured bot from being an open prompt-injection vector.
+  const allowedIds = config.allowedUserIds ?? [];
+  if (!allowedIds.includes(userId)) {
+    if (allowedIds.length === 0) {
+      console.warn(
+        `[Discord] Refusing message from ${userId}: allowedUserIds is empty. ` +
+        `Add your Discord user ID to discord.allowedUserIds in settings.json.`
+      );
+    }
     if (isDM) {
       await sendMessage(config.token, channelId, "Unauthorized.");
     } else {
@@ -666,7 +674,9 @@ async function handleInteractionCreate(token: string, interaction: DiscordIntera
   const config = getSettings().discord;
   const actorId = interaction.member?.user?.id ?? interaction.user?.id;
 
-  if (config.allowedUserIds.length > 0 && (!actorId || !config.allowedUserIds.includes(actorId))) {
+  // Default-deny: empty allowlist authorises nobody.
+  const allowedIds = config.allowedUserIds ?? [];
+  if (!actorId || !allowedIds.includes(actorId)) {
     await respondToInteraction(interaction, { content: "Unauthorized.", flags: 64 });
     return;
   }

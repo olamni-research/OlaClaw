@@ -63,6 +63,7 @@ export async function buildState(snapshot: WebSnapshot) {
 }
 
 export async function buildTechnicalInfo(snapshot: WebSnapshot) {
+  const safeSettings = sanitizeSettings(snapshot.settings);
   return {
     daemon: {
       pid: snapshot.pid,
@@ -70,11 +71,11 @@ export async function buildTechnicalInfo(snapshot: WebSnapshot) {
       uptimeMs: Math.max(0, Date.now() - snapshot.startedAt),
     },
     files: {
-      settingsJson: await readJsonFile(SETTINGS_FILE),
+      settingsJson: safeSettings,
       sessionJson: await readJsonFile(SESSION_FILE),
       stateJson: await readJsonFile(STATE_FILE),
     },
-    snapshot,
+    snapshot: { ...snapshot, settings: safeSettings },
   };
 }
 

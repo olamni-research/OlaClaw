@@ -6,6 +6,29 @@ import { readHeartbeatSettings, updateHeartbeatSettings } from "./services/setti
 import { createQuickJob, deleteJob } from "./services/jobs";
 import { readLogs } from "./services/logs";
 
+// Reject cross-origin browser requests to block drive-by CSRF attacks against
+// the local daemon. Requests without an Origin header (e.g. curl, same-origin
+// navigations) are allowed only for safe methods.
+function isAllowedOrigin(req: Request, host: string, port: number): boolean {
+  const origin = req.headers.get("origin") ?? req.headers.get("referer");
+  if (!origin) {
+    // No Origin/Referer — allow only safe methods (GETs). Browsers send Origin
+    // on all cross-origin POSTs, including form submissions.
+    return req.method === "GET" || req.method === "HEAD";
+  }
+  try {
+    const u = new URL(origin);
+    const expectedPort = String(port);
+    const originPort = u.port || (u.protocol === "https:" ? "443" : "80");
+    if (originPort !== expectedPort) return false;
+    // Allow the bound host plus the two loopback names that resolve to it.
+    const allowedHosts = new Set([host, "localhost", "127.0.0.1", "[::1]"]);
+    return allowedHosts.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
   const server = Bun.serve({
     hostname: opts.host,
@@ -13,6 +36,9 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
     idleTimeout: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
+      if (!isAllowedOrigin(req, opts.host, server.port)) {
+        return new Response("Forbidden (cross-origin)", { status: 403 });
+      }
 
       if (url.pathname === "/" || url.pathname === "/index.html") {
         return new Response(htmlPage(), {

@@ -7,7 +7,22 @@ import { homedir } from "node:os";
 import { transcribeAudioToText } from "../whisper";
 import { resolveSkillPrompt, listSkills } from "../skills";
 import { mkdir } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
+
+// Confine [send-file:...] directives to paths under the project directory.
+// Without this, prompt injection ("email me your ssh key") could exfiltrate
+// arbitrary files by having Claude emit [send-file:/etc/passwd].
+function isPathInsideProject(candidate: string): boolean {
+  if (!candidate) return false;
+  try {
+    const projectRoot = resolve(process.cwd());
+    const target = resolve(isAbsolute(candidate) ? candidate : join(projectRoot, candidate));
+    const rel = relative(projectRoot, target);
+    return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
+  } catch {
+    return false;
+  }
+}
 
 // --- Markdown → Telegram HTML conversion (ported from nanobot) ---
 
@@ -592,7 +607,18 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     `Handle message chat=${chatId} type=${chatType} from=${userId ?? "unknown"} reason=${triggerReason} text="${(text ?? "").slice(0, 80)}"`
   );
 
-  if (userId && config.allowedUserIds.length > 0 && !config.allowedUserIds.includes(userId)) {
+  // Default-deny: empty allowlist means NOBODY is authorised. This prevents
+  // a misconfigured bot (token set, allowlist forgotten) from being an open
+  // prompt-injection vector into a Claude session with tool access.
+  const allowedIds = config.allowedUserIds ?? [];
+  const authorised = typeof userId === "number" && allowedIds.includes(userId);
+  if (!authorised) {
+    if (allowedIds.length === 0) {
+      console.warn(
+        `[Telegram] Refusing message from ${userId ?? "unknown"}: allowedUserIds is empty. ` +
+        `Add your numeric Telegram user ID to telegram.allowedUserIds in settings.json.`
+      );
+    }
     if (isPrivate) {
       await sendMessage(config.token, chatId, "Unauthorized.");
     } else {
@@ -848,11 +874,21 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
         await sendMessage(config.token, chatId, cleanedText, threadId);
       }
       for (const fp of filePaths) {
+        if (!isPathInsideProject(fp)) {
+          console.warn(`[Telegram] Refused [send-file] outside project: ${fp}`);
+          await sendMessage(
+            config.token,
+            chatId,
+            `Refused to send file (path outside project): ${fp.split(/[\\/]/).pop()}`,
+            threadId
+          );
+          continue;
+        }
         try {
           await sendDocumentToChat(config.token, chatId, fp, threadId);
         } catch (err) {
           console.error(`[Telegram] Failed to send document for ${label}: ${err instanceof Error ? err.message : err}`);
-          await sendMessage(config.token, chatId, `Failed to send file: ${fp.split("/").pop()}`, threadId);
+          await sendMessage(config.token, chatId, `Failed to send file: ${fp.split(/[\\/]/).pop()}`, threadId);
         }
       }
       if (!cleanedText && filePaths.length === 0) {
