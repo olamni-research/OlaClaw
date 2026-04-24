@@ -74,14 +74,20 @@ interface OutlookConfigLike {
 
 // ---------- Constants ----------
 
-// Matches the API permissions you granted in Azure. offline_access is
-// required for refresh tokens; the rest drive mail read/send + subscriptions.
+// Matches the API permissions granted in Azure. offline_access is required
+// for refresh tokens; the rest cover mail, calendar, teams chat, contacts,
+// and directory search. Scopes are superset-chosen (e.g. Mail.ReadWrite
+// includes Mail.Read), so this list stays compact.
 const SCOPES = [
   "offline_access",
   "User.Read",
-  "Mail.Read",
-  "Mail.Send",
   "Mail.ReadWrite",
+  "Mail.Send",
+  "Calendars.ReadWrite",
+  "Chat.ReadWrite",
+  "ChatMessage.Send",
+  "Contacts.ReadWrite",
+  "Directory.Read.All",
 ].join(" ");
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
