@@ -388,6 +388,24 @@ async function fetchMessage(id: string): Promise<GraphMessage> {
   return graphJSON<GraphMessage>(`/me/messages/${encodeURIComponent(id)}?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,conversationId,internetMessageId,receivedDateTime,isRead`);
 }
 
+// Cache the authenticated user's own email so we can recognise self-replies
+// and skip them. Self→self emails happen when the user forwards/replies to
+// themselves, and without this guard our /reply call would feed the next
+// notification right back in, creating an infinite loop.
+let cachedSelfAddress: string | null = null;
+async function getSelfAddress(): Promise<string | null> {
+  if (cachedSelfAddress) return cachedSelfAddress;
+  try {
+    const me = await graphJSON<{ mail?: string; userPrincipalName?: string }>("/me");
+    const addr = (me.mail ?? me.userPrincipalName ?? "").toLowerCase();
+    if (addr) cachedSelfAddress = addr;
+    return cachedSelfAddress;
+  } catch (err) {
+    debugLog(`getSelfAddress failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
 async function markAsRead(id: string): Promise<void> {
   try {
     await graphFetch(`/me/messages/${encodeURIComponent(id)}`, {
@@ -460,6 +478,15 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
   const fromAddr = message.from?.emailAddress.address?.toLowerCase();
   if (!fromAddr) { debugLog(`No From on message ${id}`); return; }
 
+  // Loop guard: if the authenticated user is emailing themselves (forwards,
+  // self-replies, or an echo of our own outbound), skip. Our /reply would
+  // otherwise bounce right back through this handler.
+  const self = await getSelfAddress();
+  if (self && fromAddr === self) {
+    debugLog(`Skipping self-addressed message ${id} (from ${fromAddr})`);
+    return;
+  }
+
   // Default-deny allowlist (matches Telegram / Discord / WhatsApp).
   const allowed = (cfg.allowedSenders ?? []).map((s) => s.toLowerCase());
   if (allowed.length === 0) {
@@ -474,11 +501,9 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
     return;
   }
 
-  // Don't echo replies to ourselves in a loop.
-  if (message.isRead) {
-    debugLog(`Skipping already-read message ${id}`);
-    return;
-  }
+  // Mark read as a soft ack — but don't gate processing on it. The subscription
+  // is scoped to inbox/created events so our own replies (which go to Sent
+  // Items) can't loop through here anyway.
   markAsRead(id).catch(() => {});
 
   const subject = message.subject ?? "(no subject)";
@@ -565,9 +590,11 @@ export function startWebhookServer(debug = false): void {
   );
   if (outlookDebug) console.log("  Debug: enabled");
 
-  // Kick off subscription (async) and schedule renewal.
+  // Kick off subscription (async), warm the self-address cache, and schedule renewal.
   (async () => {
     try {
+      const self = await getSelfAddress();
+      if (self) console.log(`[Outlook] Authenticated as ${self}`);
       await ensureSubscription();
       scheduleRenewal();
     } catch (err) {
