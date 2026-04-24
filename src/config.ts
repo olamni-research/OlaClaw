@@ -90,6 +90,11 @@ const DEFAULT_SETTINGS: Settings = {
     webhookPort: 4634,
     publicUrl: "",
   },
+  teams: {
+    enabled: false,
+    pollIntervalSeconds: 45,
+    allowedChatMembers: [],
+  },
   // Default to "strict" (no Bash/WebSearch/WebFetch). "moderate" gives Claude
   // all tools under a prompt-level directory guard that prompt injection can
   // bypass — opt into it explicitly if you need it.
@@ -146,6 +151,12 @@ export interface OutlookConfig {
   publicUrl: string;           // public HTTPS base URL Microsoft can reach
 }
 
+export interface TeamsConfig {
+  enabled: boolean;              // off by default; shares Outlook's auth token
+  pollIntervalSeconds: number;   // default 45 — Teams change notifications are metered, so poll instead
+  allowedChatMembers: string[];  // email addresses or AAD user IDs allowed to invoke Claude
+}
+
 export type SecurityLevel =
   | "locked"
   | "strict"
@@ -170,6 +181,7 @@ export interface Settings {
   discord: DiscordConfig;
   whatsapp: WhatsAppConfig;
   outlook: OutlookConfig;
+  teams: TeamsConfig;
   security: SecurityConfig;
   web: WebConfig;
   stt: SttConfig;
@@ -353,6 +365,15 @@ function parseSettings(raw: Record<string, any>): Settings {
         : "127.0.0.1",
       webhookPort: Number.isFinite(raw.outlook?.webhookPort) ? Number(raw.outlook.webhookPort) : 4634,
       publicUrl: typeof raw.outlook?.publicUrl === "string" ? raw.outlook.publicUrl.trim().replace(/\/$/, "") : "",
+    },
+    teams: {
+      enabled: raw.teams?.enabled ?? false,
+      pollIntervalSeconds: Number.isFinite(raw.teams?.pollIntervalSeconds)
+        ? Math.max(10, Number(raw.teams.pollIntervalSeconds))
+        : 45,
+      allowedChatMembers: Array.isArray(raw.teams?.allowedChatMembers)
+        ? raw.teams.allowedChatMembers.map(String).map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+        : [],
     },
     security: {
       level,

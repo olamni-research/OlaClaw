@@ -251,7 +251,7 @@ async function getValidAccessToken(): Promise<string> {
 
 // ---------- Graph API helpers ----------
 
-async function graphFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function graphFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getValidAccessToken();
   const url = path.startsWith("http") ? path : `${GRAPH}${path}`;
   const headers = new Headers(init.headers);
@@ -260,7 +260,7 @@ async function graphFetch(path: string, init: RequestInit = {}): Promise<Respons
   return fetch(url, { ...init, headers });
 }
 
-async function graphJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function graphJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await graphFetch(path, init);
   if (!res.ok) {
     const text = await res.text();
@@ -390,6 +390,96 @@ function textOf(body?: { contentType: "text" | "html"; content: string }): strin
     .trim();
 }
 
+// ---------- Contact / Directory lookup ----------
+
+interface ContactRecord {
+  source: "contacts" | "directory" | null;
+  name?: string;
+  email?: string;
+  jobTitle?: string;
+  companyName?: string;
+  department?: string;
+  officePhone?: string;
+  mobilePhone?: string;
+}
+
+// Small in-memory cache keyed by lowercase email. Calls are cheap enough
+// that we just re-hit Graph on daemon restart.
+const contactCache = new Map<string, ContactRecord>();
+
+async function lookupPersonalContact(email: string): Promise<ContactRecord | null> {
+  const url = `/me/contacts?$filter=${encodeURIComponent(`emailAddresses/any(e: e/address eq '${email}')`)}&$top=1&$select=displayName,emailAddresses,jobTitle,companyName,department,businessPhones,mobilePhone`;
+  try {
+    const res = await graphJSON<{ value: Array<{ displayName?: string; emailAddresses?: Array<{ address?: string }>; jobTitle?: string; companyName?: string; department?: string; businessPhones?: string[]; mobilePhone?: string }> }>(url);
+    const c = res.value?.[0];
+    if (!c) return null;
+    return {
+      source: "contacts",
+      name: c.displayName,
+      email: c.emailAddresses?.[0]?.address,
+      jobTitle: c.jobTitle,
+      companyName: c.companyName,
+      department: c.department,
+      officePhone: c.businessPhones?.[0],
+      mobilePhone: c.mobilePhone,
+    };
+  } catch (err) {
+    debugLog(`lookupPersonalContact(${email}) failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+async function lookupDirectoryUser(email: string): Promise<ContactRecord | null> {
+  const url = `/users?$filter=${encodeURIComponent(`mail eq '${email}' or userPrincipalName eq '${email}'`)}&$top=1&$select=displayName,mail,userPrincipalName,jobTitle,companyName,department,businessPhones,mobilePhone`;
+  try {
+    const res = await graphJSON<{ value: Array<{ displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string; companyName?: string; department?: string; businessPhones?: string[]; mobilePhone?: string }> }>(url);
+    const u = res.value?.[0];
+    if (!u) return null;
+    return {
+      source: "directory",
+      name: u.displayName,
+      email: u.mail ?? u.userPrincipalName,
+      jobTitle: u.jobTitle,
+      companyName: u.companyName,
+      department: u.department,
+      officePhone: u.businessPhones?.[0],
+      mobilePhone: u.mobilePhone,
+    };
+  } catch (err) {
+    debugLog(`lookupDirectoryUser(${email}) failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+/**
+ * Try personal contacts first (more accurate for people you actually know),
+ * then fall back to the org directory. Negative results are cached too, so
+ * we don't hammer Graph for every unknown address.
+ */
+async function lookupContact(emailRaw: string): Promise<ContactRecord | null> {
+  const email = emailRaw.toLowerCase();
+  const cached = contactCache.get(email);
+  if (cached !== undefined) return cached.source === null ? null : cached;
+
+  let record = await lookupPersonalContact(email);
+  if (!record) record = await lookupDirectoryUser(email);
+  contactCache.set(email, record ?? { source: null });
+  return record;
+}
+
+function formatContactForPrompt(c: ContactRecord): string {
+  const parts: string[] = [];
+  if (c.name) parts.push(c.name);
+  if (c.jobTitle) parts.push(c.jobTitle);
+  if (c.companyName) parts.push(c.companyName);
+  if (c.department) parts.push(`dept: ${c.department}`);
+  const phones: string[] = [];
+  if (c.officePhone) phones.push(c.officePhone);
+  if (c.mobilePhone) phones.push(`mob ${c.mobilePhone}`);
+  if (phones.length > 0) parts.push(phones.join(", "));
+  return `Contact (${c.source}): ${parts.join(" · ")}`;
+}
+
 async function fetchMessage(id: string): Promise<GraphMessage> {
   return graphJSON<GraphMessage>(`/me/messages/${encodeURIComponent(id)}?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,conversationId,internetMessageId,receivedDateTime,isRead`);
 }
@@ -399,7 +489,7 @@ async function fetchMessage(id: string): Promise<GraphMessage> {
 // themselves, and without this guard our /reply call would feed the next
 // notification right back in, creating an infinite loop.
 let cachedSelfAddress: string | null = null;
-async function getSelfAddress(): Promise<string | null> {
+export async function getSelfAddress(): Promise<string | null> {
   if (cachedSelfAddress) return cachedSelfAddress;
   try {
     const me = await graphJSON<{ mail?: string; userPrincipalName?: string }>("/me");
@@ -670,12 +760,17 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
   const subject = message.subject ?? "(no subject)";
   const bodyText = textOf(message.body) || message.bodyPreview || "";
 
-  // Fetch calendar in parallel with building the prompt so there's no added
-  // round-trip latency before we call Claude.
-  const calendarContext = await fetchUpcomingEvents();
+  // Fetch calendar + sender contact info in parallel with building the
+  // prompt — each is one Graph call and adds a tiny amount of latency.
+  const [calendarContext, senderContact] = await Promise.all([
+    fetchUpcomingEvents(),
+    lookupContact(fromAddr),
+  ]);
 
-  const promptParts = [
-    `[Outlook from ${message.from?.emailAddress.name ?? fromAddr} <${fromAddr}>]`,
+  const senderLine = `[Outlook from ${message.from?.emailAddress.name ?? fromAddr} <${fromAddr}>]`;
+  const promptParts = [senderLine];
+  if (senderContact) promptParts.push(formatContactForPrompt(senderContact));
+  promptParts.push(
     `Subject: ${subject}`,
     "",
     calendarContext,
@@ -683,7 +778,7 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
     "To book a meeting, emit: [create-event:{\"subject\":\"...\",\"startIso\":\"2026-04-28T14:00:00\",\"endIso\":\"2026-04-28T14:30:00\",\"timeZone\":\"UTC\",\"attendees\":[\"someone@example.com\"]}] anywhere in your reply. The directive gets executed and stripped before the email is sent.",
     "",
     bodyText.slice(0, 20_000), // cap monster emails
-  ];
+  );
   const prompt = promptParts.join("\n");
   console.log(
     `[${new Date().toLocaleTimeString()}] Outlook ${fromAddr}: "${subject.slice(0, 60)}${subject.length > 60 ? "..." : ""}"`

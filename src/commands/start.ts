@@ -327,11 +327,13 @@ export async function start(args: string[] = []) {
   let discordStopGateway: (() => void) | null = null;
   let whatsappStopServer: (() => void) | null = null;
   let outlookStopServer: (() => void) | null = null;
+  let teamsStopPolling: (() => void) | null = null;
 
   async function shutdown() {
     if (discordStopGateway) discordStopGateway();
     if (whatsappStopServer) whatsappStopServer();
     if (outlookStopServer) outlookStopServer();
+    if (teamsStopPolling) teamsStopPolling();
     if (web) web.stop();
     await teardownStatusline();
     await cleanupPidFile();
@@ -481,6 +483,45 @@ export async function start(args: string[] = []) {
 
   await initOutlook(currentSettings.outlook);
   if (!outlookKey) console.log("  Outlook: not configured");
+
+  // --- Teams (extension, polling) ---
+  let teamsSendToChat: ((chatId: string, text: string) => Promise<void>) | null = null;
+  let teamsKey = "";
+
+  async function initTeams(cfg: Settings["teams"], outlookReady: boolean) {
+    // Teams shares Outlook's cached tokens — only start if Outlook is configured.
+    const nextKey = cfg.enabled && outlookReady
+      ? `${cfg.pollIntervalSeconds}:${cfg.allowedChatMembers.join(",")}`
+      : "";
+    if (nextKey === teamsKey) return;
+
+    if (teamsStopPolling) {
+      teamsStopPolling();
+      teamsStopPolling = null;
+      teamsSendToChat = null;
+    }
+
+    if (!nextKey) {
+      if (teamsKey) console.log(`[${ts()}] Teams: disabled`);
+      teamsKey = "";
+      return;
+    }
+
+    try {
+      const { startTeamsPolling, stopTeamsPolling, sendMessageToChat } =
+        await import("../../extensions/teams/teams");
+      startTeamsPolling(debugFlag);
+      teamsStopPolling = stopTeamsPolling;
+      teamsSendToChat = sendMessageToChat;
+      teamsKey = nextKey;
+      console.log(`[${ts()}] Teams: enabled`);
+    } catch (err) {
+      console.error(`[${ts()}] Teams init failed:`, err);
+    }
+  }
+
+  await initTeams(currentSettings.teams, !!outlookKey);
+  if (!teamsKey) console.log("  Teams: not configured");
 
   function isAddrInUse(err: unknown): boolean {
     if (!err || typeof err !== "object") return false;
@@ -771,6 +812,9 @@ export async function start(args: string[] = []) {
 
       // Outlook changes
       await initOutlook(newSettings.outlook);
+
+      // Teams changes (depends on outlook auth being configured)
+      await initTeams(newSettings.teams, !!outlookKey);
     } catch (err) {
       console.error(`[${ts()}] Hot-reload error:`, err);
     }
