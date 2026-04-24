@@ -6,7 +6,10 @@ Receive emails in OlaClaw via Microsoft Graph webhook notifications and respond 
 
 - Inbound email (text + HTML, auto-stripped) → Claude → threaded reply via Graph
 - Outbound email for heartbeat / job forwarding via `sendMessageToUser()`
+- **Calendar context** — upcoming 7 days of events auto-injected into every inbound prompt, so Claude can see your schedule when someone asks to meet
+- **Calendar booking** — Claude can emit a `[create-event:{...}]` directive and the handler books it on your calendar before sending the reply (appends a `Calendar actions:` footer with ✓/✗ status)
 - Default-deny allowlist on the `From:` address
+- Self-reply loop guard — skips notifications where From matches the authenticated mailbox
 - Device-code OAuth flow — no client secret, no redirect URI, no password
 - Automatic access-token refresh (the refresh token is cached locally, chmod 0600)
 - Subscription auto-renewal before the ~70h Microsoft expiry
@@ -19,6 +22,7 @@ Receive emails in OlaClaw via Microsoft Graph webhook notifications and respond 
    - Redirect URI: leave blank (we use device code flow)
 2. **API permissions** → Microsoft Graph → **Delegated**:
    - `User.Read`, `Mail.Read`, `Mail.Send`, `Mail.ReadWrite`, `offline_access`
+   - `Calendars.ReadWrite` (for calendar context + booking)
 3. Grab the **Application (client) ID** and **Directory (tenant) ID** from the Overview page. `common` works as tenant for personal + work accounts.
 
 ## Setup
@@ -83,12 +87,34 @@ You'll see `Outlook: enabled` and the subscription get created. Microsoft valida
 - **Default-deny allowlist.** Email is a spam vector — empty `allowedSenders` means the handler rejects everything. Add your own address (+ any teammate you want to trust) before expecting replies.
 - **Subscription expiry is ~70h max.** We auto-renew 24h before that. If the daemon is offline for >70h the subscription dies silently and you'll need to restart OlaClaw to re-create it.
 
-## Limitations (first cut)
+## Calendar (v1.1)
+
+When an email arrives, the handler:
+1. Pulls the next ~7 days of events from `/me/calendarView`
+2. Formats them as plain-text lines and injects them into the prompt
+3. Also injects a hint telling Claude how to emit `[create-event:{...}]`
+
+If Claude wants to book a meeting, it emits JSON like:
+
+```
+[create-event:{"subject":"Intro call","startIso":"2026-04-28T14:00:00","endIso":"2026-04-28T14:30:00","timeZone":"UTC","attendees":["counterparty@example.com"],"body":"30 min intro","location":"Teams"}]
+```
+
+The handler:
+- JSON-parses the body
+- Calls `POST /me/events`
+- Strips the directive from the email reply
+- Appends a short footer (`✓ Booked "..." ...` or `✗ Failed ...`)
+
+**Safety:** events are only created on the authenticated mailbox (yours). No delete/update yet. Each attempt is logged to the daemon console.
+
+## Limitations
 
 - **Plain text replies only.** HTML outbound support is a nice-to-have but would need a proper sanitiser on the incoming side.
 - **No attachment support.** Inbound attachments are ignored; outbound can't send any.
 - **No read-receipt / heartbeat forwarding toggle yet** — add an `outlook.sendMessageToUser` call manually if you want this.
 - **Single user only.** The Azure app is registered against one user's mailbox. For multi-tenant use, you'd want admin consent + a different flow.
+- **Calendar is create-only.** No event updates or deletions yet — Claude can book, not cancel.
 
 ## File layout
 
@@ -104,6 +130,8 @@ Core integration:
 - `src/index.ts` — `olaclaw outlook auth` entry point
 
 ## Troubleshooting
+
+**`Device code token exchange failed: invalid_client`** — your Azure app doesn't have **"Allow public client flows"** enabled. Azure → App registrations → your app → **Authentication** → scroll to "Advanced settings" → toggle **Allow public client flows** to **Yes** → Save. Device code flow requires this.
 
 **`Device code expired — run auth again`** — you waited more than ~15 min to approve. Just rerun `olaclaw outlook auth`.
 

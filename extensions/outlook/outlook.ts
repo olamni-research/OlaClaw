@@ -406,6 +406,161 @@ async function getSelfAddress(): Promise<string | null> {
   }
 }
 
+// ---------- Calendar helpers ----------
+
+interface CalendarEvent {
+  id: string;
+  subject?: string;
+  start: { dateTime: string; timeZone: string };
+  end: { dateTime: string; timeZone: string };
+  organizer?: { emailAddress: { address: string; name?: string } };
+  attendees?: Array<{ emailAddress: { address: string; name?: string }; type?: string }>;
+  isAllDay?: boolean;
+  location?: { displayName?: string };
+  showAs?: string;
+}
+
+/**
+ * Fetch all events that intersect [start, end]. Uses the calendarView endpoint
+ * which expands recurring instances for us.
+ */
+async function getEventsInRange(startIso: string, endIso: string): Promise<CalendarEvent[]> {
+  const url = `/me/calendarView?startDateTime=${encodeURIComponent(startIso)}&endDateTime=${encodeURIComponent(endIso)}&$select=id,subject,start,end,organizer,attendees,isAllDay,location,showAs&$orderby=start/dateTime&$top=50`;
+  const res = await graphJSON<{ value: CalendarEvent[] }>(url, {
+    // Ask Graph to return times in the user's local tz when possible — still
+    // get ISO on the wire, just in a readable zone.
+    headers: { Prefer: 'outlook.timezone="UTC"' },
+  });
+  return res.value ?? [];
+}
+
+function formatEventLine(ev: CalendarEvent): string {
+  const s = new Date(ev.start.dateTime + "Z").toISOString().slice(0, 16).replace("T", " ");
+  const e = new Date(ev.end.dateTime + "Z").toISOString().slice(0, 16).replace("T", " ");
+  const subj = ev.subject ?? "(no subject)";
+  const loc = ev.location?.displayName ? ` @ ${ev.location.displayName}` : "";
+  return `  ${s} – ${e.slice(11)}  ${subj}${loc}`;
+}
+
+/** Render a compact multi-line summary suitable for prompt injection. */
+function renderCalendarContext(events: CalendarEvent[], startIso: string, endIso: string): string {
+  if (events.length === 0) {
+    return `Calendar (${startIso.slice(0, 10)} → ${endIso.slice(0, 10)}): no events scheduled.`;
+  }
+  const lines = [`Calendar (${startIso.slice(0, 10)} → ${endIso.slice(0, 10)}) in UTC:`];
+  for (const ev of events) lines.push(formatEventLine(ev));
+  return lines.join("\n");
+}
+
+interface CreateEventInput {
+  subject: string;
+  startIso: string;          // "2026-04-28T14:00:00" (local time in timeZone)
+  endIso: string;
+  timeZone?: string;         // default UTC
+  attendees?: string[];      // email addresses
+  body?: string;             // plain text
+  location?: string;
+}
+
+async function createEvent(input: CreateEventInput): Promise<CalendarEvent> {
+  const body = {
+    subject: input.subject,
+    body: input.body ? { contentType: "Text", content: input.body } : undefined,
+    start: { dateTime: input.startIso, timeZone: input.timeZone ?? "UTC" },
+    end: { dateTime: input.endIso, timeZone: input.timeZone ?? "UTC" },
+    location: input.location ? { displayName: input.location } : undefined,
+    attendees: (input.attendees ?? []).map((addr) => ({
+      emailAddress: { address: addr },
+      type: "required",
+    })),
+  };
+  return graphJSON<CalendarEvent>("/me/events", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Pull the next ~7 days of events for prompt context. Capped to 50 items so
+ * we don't blow up the prompt on a busy week.
+ */
+async function fetchUpcomingEvents(): Promise<string> {
+  try {
+    const now = new Date();
+    const weekOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const events = await getEventsInRange(now.toISOString(), weekOut.toISOString());
+    return renderCalendarContext(events, now.toISOString(), weekOut.toISOString());
+  } catch (err) {
+    debugLog(`fetchUpcomingEvents failed: ${err instanceof Error ? err.message : err}`);
+    return "Calendar: (unavailable)";
+  }
+}
+
+/**
+ * Extract and execute [create-event:{...json...}] directives from Claude's
+ * response. Returns the cleaned text plus a list of (subject, outcome) pairs
+ * to surface in the email reply so the user sees what was actually booked.
+ */
+async function extractAndRunCreateEventDirectives(text: string): Promise<{
+  cleanedText: string;
+  outcomes: Array<{ ok: boolean; summary: string }>;
+}> {
+  const outcomes: Array<{ ok: boolean; summary: string }> = [];
+  const pattern = /\[create-event:([\s\S]*?)\]/g;
+  const matches: Array<{ raw: string; body: string }> = [];
+
+  // Find all directives first so we don't mutate during iteration.
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(text)) !== null) {
+    matches.push({ raw: m[0], body: m[1].trim() });
+  }
+
+  for (const match of matches) {
+    let parsed: CreateEventInput | null = null;
+    try {
+      const obj = JSON.parse(match.body);
+      if (typeof obj === "object" && obj !== null && typeof obj.subject === "string" && typeof obj.startIso === "string" && typeof obj.endIso === "string") {
+        parsed = {
+          subject: String(obj.subject),
+          startIso: String(obj.startIso),
+          endIso: String(obj.endIso),
+          timeZone: typeof obj.timeZone === "string" ? obj.timeZone : "UTC",
+          attendees: Array.isArray(obj.attendees) ? obj.attendees.filter((a: unknown) => typeof a === "string") : [],
+          body: typeof obj.body === "string" ? obj.body : undefined,
+          location: typeof obj.location === "string" ? obj.location : undefined,
+        };
+      }
+    } catch (err) {
+      debugLog(`[create-event] JSON parse failed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    if (!parsed) {
+      outcomes.push({ ok: false, summary: `Invalid create-event payload: ${match.body.slice(0, 80)}` });
+      continue;
+    }
+
+    try {
+      const ev = await createEvent(parsed);
+      console.log(`[Outlook] Event created: "${ev.subject}" ${ev.start.dateTime} → ${ev.end.dateTime} (id=${ev.id})`);
+      outcomes.push({
+        ok: true,
+        summary: `Booked "${ev.subject}" ${ev.start.dateTime} → ${ev.end.dateTime}${parsed.attendees?.length ? ` with ${parsed.attendees.join(", ")}` : ""}`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Outlook] Event create failed: ${msg}`);
+      outcomes.push({ ok: false, summary: `Failed to book "${parsed.subject}": ${msg}` });
+    }
+  }
+
+  const cleanedText = text
+    .replace(pattern, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { cleanedText, outcomes };
+}
+
 async function markAsRead(id: string): Promise<void> {
   try {
     await graphFetch(`/me/messages/${encodeURIComponent(id)}`, {
@@ -508,9 +663,18 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
 
   const subject = message.subject ?? "(no subject)";
   const bodyText = textOf(message.body) || message.bodyPreview || "";
+
+  // Fetch calendar in parallel with building the prompt so there's no added
+  // round-trip latency before we call Claude.
+  const calendarContext = await fetchUpcomingEvents();
+
   const promptParts = [
     `[Outlook from ${message.from?.emailAddress.name ?? fromAddr} <${fromAddr}>]`,
     `Subject: ${subject}`,
+    "",
+    calendarContext,
+    "",
+    "To book a meeting, emit: [create-event:{\"subject\":\"...\",\"startIso\":\"2026-04-28T14:00:00\",\"endIso\":\"2026-04-28T14:30:00\",\"timeZone\":\"UTC\",\"attendees\":[\"someone@example.com\"]}] anywhere in your reply. The directive gets executed and stripped before the email is sent.",
     "",
     bodyText.slice(0, 20_000), // cap monster emails
   ];
@@ -521,9 +685,22 @@ async function handleNotification(notification: WebhookNotification): Promise<vo
 
   try {
     const result = await runUserMessage("outlook", prompt);
-    const replyBody = result.exitCode === 0
-      ? result.stdout.trim() || "(empty response)"
-      : `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`;
+    if (result.exitCode !== 0) {
+      await sendReply(fromAddr, subject, `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`, id);
+      return;
+    }
+
+    // Execute any [create-event:...] directives Claude emitted, strip them
+    // from the reply, and append a short status footer so the human can see
+    // what got booked (or didn't).
+    const { cleanedText, outcomes } = await extractAndRunCreateEventDirectives(result.stdout || "");
+    let replyBody = cleanedText || "(empty response)";
+    if (outcomes.length > 0) {
+      const footer = outcomes
+        .map((o) => (o.ok ? `✓ ${o.summary}` : `✗ ${o.summary}`))
+        .join("\n");
+      replyBody = `${replyBody}\n\n--\nCalendar actions:\n${footer}`;
+    }
     await sendReply(fromAddr, subject, replyBody, id);
   } catch (err) {
     console.error(`[Outlook] Handler error: ${err instanceof Error ? err.message : err}`);
